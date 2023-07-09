@@ -1,3 +1,4 @@
+#![warn(missing_docs)]
 #![doc = include_str!("../README.md")]
 
 mod client;
@@ -7,6 +8,6 @@ mod utilities;
 
 pub mod command;
 
-pub use client::{ephemeris, major_bodies};
-pub use ephemeris::EphemerisItem;
+pub use client::{ephemeris_orbital_elements, ephemeris_vector, major_bodies};
+pub use ephemeris::{EphemerisOrbitalElementsItem, EphemerisVectorItem};
 pub use major_bodies::MajorBody;

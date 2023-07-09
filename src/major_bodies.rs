@@ -6,9 +6,20 @@ use thiserror::Error;
 /// having pre-computed trajectories.
 ///
 /// <https://ssd.jpl.nasa.gov/horizons/manual.html#defs>
+///
+/// Example
+/// ```
+/// # use rhorizons::MajorBody;
+/// let mb = MajorBody {
+///     id: 399,
+///     name: "Earth".to_string()
+/// };
+/// ```
 #[derive(Debug, PartialEq, Eq)]
 pub struct MajorBody {
+    /// Id of the major body
     pub id: i32,
+    /// Name of the major body (e.g. Earth)
     pub name: String,
 }
 
