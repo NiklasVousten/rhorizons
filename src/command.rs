@@ -1,9 +1,7 @@
 use std::fmt::Display;
 
-use chrono::{DateTime, Utc, Duration};
+use chrono::{DateTime, Duration, Utc};
 use thiserror::Error;
-
-use async_trait::async_trait;
 
 use crate::client::{self, HorizonsQueryError};
 
@@ -35,8 +33,8 @@ impl CommandBuilder {
     pub fn from_type(command_type: CommandType) -> Box<dyn QueryCommand> {
         match command_type {
             CommandType::MajorBody => Box::new(MajorBodyCommand {}),
-            CommandType::Vector => Box::new(Command::<VectorCommand>::default()),
-            CommandType::OrbitalElement => Box::new(Command::<OrbitalElementCommand>::default()),
+            CommandType::Vector => Box::<Command<VectorCommand>>::default(),
+            CommandType::OrbitalElement => Box::<Command<OrbitalElementCommand>>::default(),
 
             _ => Box::new(MajorBodyCommand {}),
         }
@@ -44,7 +42,7 @@ impl CommandBuilder {
 
     pub fn from_id(id: u32) -> CommandBuilder {
         CommandBuilder {
-            id: id,
+            id,
             start: None,
             end: None,
             time_step: None,
@@ -60,7 +58,7 @@ impl CommandBuilder {
                 id: self.id,
                 start: self.start,
                 end: self.end,
-                time_step: self.time_step,
+                _time_step: self.time_step,
                 command: VectorCommand::default(),
             })),
             _ => Err(CommandTypeError),
@@ -68,31 +66,77 @@ impl CommandBuilder {
     }
 
     pub fn with_start(&self, start: DateTime<Utc>) -> Self {
-        CommandBuilder { id: self.id, start: Some(start), end: self.end, time_step: self.time_step }
+        CommandBuilder {
+            id: self.id,
+            start: Some(start),
+            end: self.end,
+            time_step: self.time_step,
+        }
     }
 
     pub fn with_end(&self, end: DateTime<Utc>) -> Self {
-        CommandBuilder { id: self.id, start: self.start, end: Some(end), time_step: self.time_step }
+        CommandBuilder {
+            id: self.id,
+            start: self.start,
+            end: Some(end),
+            time_step: self.time_step,
+        }
     }
 
     pub fn with_range(&self, start: DateTime<Utc>, end: DateTime<Utc>) -> Self {
-        CommandBuilder { id: self.id, start: Some(start), end: Some(end), time_step: self.time_step }
+        CommandBuilder {
+            id: self.id,
+            start: Some(start),
+            end: Some(end),
+            time_step: self.time_step,
+        }
     }
 
-    pub fn with_time_step(&self, time_step: Duration) -> Self {
-        CommandBuilder { id: self.id, start: self.start, end: self.end, time_step: Some(time_step) }
+    fn _with_time_step(&self, time_step: Duration) -> Self {
+        CommandBuilder {
+            id: self.id,
+            start: self.start,
+            end: self.end,
+            time_step: Some(time_step),
+        }
     }
 }
 
-#[async_trait]
 pub trait QueryCommand {
-    fn get_parameters(&self) -> &[(&str, &str)];
+    fn get_parameters(&self) -> Vec<(&str, String)>;
+}
 
-    async fn query(&self) -> Result<Vec<String>, HorizonsQueryError> {
+//Kind fo the same as QueryCommand, but it could allow loops otherwise
+pub trait EphemerisCommand {
+    fn get_parameters(&self) -> Vec<(&str, String)>;
+}
+
+#[derive(Debug)]
+pub struct MajorBodyCommand {}
+
+#[derive(Default)]
+pub struct Command<EC>
+where
+    EC: EphemerisCommand,
+{
+    id: u32,
+
+    start: Option<DateTime<Utc>>,
+    end: Option<DateTime<Utc>>,
+    _time_step: Option<Duration>,
+
+    command: EC,
+}
+
+impl<EC> Command<EC>
+where
+    EC: EphemerisCommand,
+{
+    pub async fn query(&self) -> Result<Vec<String>, HorizonsQueryError> {
         client::query(&self.get_parameters()).await
     }
 
-    async fn query_with_retries(&self, retries: u8) -> Result<Vec<String>, HorizonsQueryError> {
+    pub async fn query_with_retries(&self, retries: u8) -> Result<Vec<String>, HorizonsQueryError> {
         for n in 1..retries {
             log::trace!("try {}", n);
             if let Ok(result) = self.query().await {
@@ -104,28 +148,7 @@ pub trait QueryCommand {
     }
 }
 
-trait EphemerisCommand {
-    fn get_parameters(&self) -> &[(&str, &str)];
-}
-
-#[derive(Debug)]
-pub struct MajorBodyCommand {}
-
-#[derive(Default)]
-struct Command<EC>
-where
-    EC: EphemerisCommand,
-{
-    id: u32,
-
-    start: Option<DateTime<Utc>>,
-    end: Option<DateTime<Utc>>,
-    time_step: Option<Duration>,
-
-    command: EC,
-}
-
-struct ObserverCommand {}
+struct _ObserverCommand {}
 
 #[derive(Default)]
 struct VectorCommand {}
@@ -133,11 +156,11 @@ struct VectorCommand {}
 #[derive(Default)]
 struct OrbitalElementCommand {}
 
-struct SmallBodyCommand {}
+struct _SmallBodyCommand {}
 
 impl QueryCommand for MajorBodyCommand {
-    fn get_parameters(&self) -> &[(&str, &str)] {
-        &[("COMMAND", "MB")]
+    fn get_parameters(&self) -> Vec<(&str, String)> {
+        vec![("COMMAND", "MB".to_string())]
     }
 }
 
@@ -145,25 +168,43 @@ impl<EC> QueryCommand for Command<EC>
 where
     EC: EphemerisCommand,
 {
-    fn get_parameters(&self) -> &[(&str, &str)] {
-        todo!()
+    fn get_parameters(&self) -> Vec<(&str, String)> {
+        let mut parameters = vec![
+            ("COMMAND", self.id.to_string()),
+            ("EPHEM_TYPE", "VECTORS".to_string()),
+        ];
+
+        if let Some(start) = self.start {
+            parameters.push(("START_TIME", start.format("%Y-%b-%d-%T").to_string()))
+        }
+
+        if let Some(end) = self.end {
+            parameters.push(("STOP_TIME", end.format("%Y-%b-%d-%T").to_string()))
+        }
+
+        parameters.extend(self.command.get_parameters());
+
+        parameters
     }
 }
 
 impl EphemerisCommand for VectorCommand {
-    fn get_parameters(&self) -> &[(&str, &str)] {
-        todo!()
+    fn get_parameters(&self) -> Vec<(&str, String)> {
+        //todo!()
+        vec![]
     }
 }
 
 impl EphemerisCommand for OrbitalElementCommand {
-    fn get_parameters(&self) -> &[(&str, &str)] {
+    fn get_parameters(&self) -> Vec<(&str, String)> {
         todo!()
     }
 }
 
 #[cfg(test)]
 mod test {
+    use chrono::TimeZone;
+
     use super::*;
 
     #[test]
@@ -172,5 +213,23 @@ mod test {
         assert_eq!(cb.id, 32);
         let c = cb.with_type(CommandType::MajorBody);
         assert!(c.is_err());
+    }
+
+    #[test]
+    fn get_parameters() {
+        let cb = CommandBuilder::from_id(399);
+        let c = cb.with_range(
+            Utc.with_ymd_and_hms(2016, 10, 15, 12, 0, 0).unwrap(),
+            Utc.with_ymd_and_hms(2016, 10, 15, 13, 0, 0).unwrap()).with_type(CommandType::Vector).unwrap();
+        println!("{:?}", c.get_parameters());
+    }
+
+    #[tokio::test]
+    async fn query_command() {
+        let cb = CommandBuilder::from_id(399);
+        let c: Command<VectorCommand> = cb.with_range(
+            Utc.with_ymd_and_hms(2016, 10, 15, 12, 0, 0).unwrap(),
+            Utc.with_ymd_and_hms(2016, 10, 15, 13, 0, 0).unwrap()).with_type(CommandType::Vector).unwrap();
+        let res = c.query();
     }
 }
