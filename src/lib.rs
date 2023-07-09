@@ -5,7 +5,7 @@ mod ephemeris;
 mod major_bodies;
 mod utilities;
 
-mod command;
+pub mod command;
 
 pub use client::{ephemeris, major_bodies};
 pub use ephemeris::EphemerisItem;
