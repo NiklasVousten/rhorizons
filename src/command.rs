@@ -1,9 +1,13 @@
 use std::fmt::Display;
 
+use async_trait::async_trait;
 use chrono::{DateTime, Duration, Utc};
 use thiserror::Error;
 
-use crate::client::{self, HorizonsQueryError};
+use crate::{
+    client::{self, HorizonsQueryError},
+    ephemeris, major_bodies,
+};
 
 pub enum CommandType {
     MajorBody,
@@ -30,7 +34,7 @@ pub struct CommandBuilder {
 }
 
 impl CommandBuilder {
-    pub fn from_type(command_type: CommandType) -> Box<dyn QueryCommand> {
+    pub fn from_type(command_type: CommandType) -> Box<dyn QueryCommand + Sync> {
         match command_type {
             CommandType::MajorBody => Box::new(MajorBodyCommand {}),
             CommandType::Vector => Box::<Command<VectorCommand>>::default(),
@@ -52,7 +56,7 @@ impl CommandBuilder {
     pub fn with_type(
         self,
         command_type: CommandType,
-    ) -> Result<Box<dyn QueryCommand>, CommandTypeError> {
+    ) -> Result<Box<dyn QueryCommand + Sync>, CommandTypeError> {
         match command_type {
             CommandType::Vector => Ok(Box::new(Command::<VectorCommand> {
                 id: self.id,
@@ -102,11 +106,46 @@ impl CommandBuilder {
     }
 }
 
-pub trait QueryCommand {
+#[async_trait]
+pub trait QueryCommand: Parse {
     fn get_parameters(&self) -> Vec<(&str, String)>;
 }
 
-//Kind fo the same as QueryCommand, but it could allow loops otherwise
+#[async_trait]
+trait Query {
+    async fn query(&self) -> Result<Vec<String>, HorizonsQueryError>;
+
+    async fn query_with_retries(&self, retries: u8) -> Result<Vec<String>, HorizonsQueryError>;
+}
+
+#[async_trait]
+impl<T: QueryCommand + Sync + ?Sized> Query for T {
+    async fn query(&self) -> Result<Vec<String>, HorizonsQueryError> {
+        client::query(&self.get_parameters()).await
+    }
+
+    async fn query_with_retries(&self, retries: u8) -> Result<Vec<String>, HorizonsQueryError> {
+        for n in 1..retries {
+            log::trace!("try {}", n);
+            if let Ok(result) = self.query().await {
+                return Ok(result);
+            }
+            tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+        }
+        Err(HorizonsQueryError)
+    }
+}
+
+pub enum ParseResultType {
+    MajorBodies(Vec<major_bodies::MajorBody>),
+    Vector(Vec<ephemeris::EphemerisVectorItem>),
+    Elements(Vec<ephemeris::EphemerisOrbitalElementsItem>),
+}
+
+pub trait Parse {
+    fn parse(&self) -> ParseResultType;
+}
+
 pub trait EphemerisCommand {
     fn get_parameters(&self) -> Vec<(&str, String)>;
 }
@@ -128,26 +167,6 @@ where
     command: EC,
 }
 
-impl<EC> Command<EC>
-where
-    EC: EphemerisCommand,
-{
-    pub async fn query(&self) -> Result<Vec<String>, HorizonsQueryError> {
-        client::query(&self.get_parameters()).await
-    }
-
-    pub async fn query_with_retries(&self, retries: u8) -> Result<Vec<String>, HorizonsQueryError> {
-        for n in 1..retries {
-            log::trace!("try {}", n);
-            if let Ok(result) = self.query().await {
-                return Ok(result);
-            }
-            tokio::time::sleep(std::time::Duration::from_secs(1)).await;
-        }
-        Err(HorizonsQueryError)
-    }
-}
-
 struct _ObserverCommand {}
 
 #[derive(Default)]
@@ -161,6 +180,12 @@ struct _SmallBodyCommand {}
 impl QueryCommand for MajorBodyCommand {
     fn get_parameters(&self) -> Vec<(&str, String)> {
         vec![("COMMAND", "MB".to_string())]
+    }
+}
+
+impl Parse for MajorBodyCommand {
+    fn parse(&self) -> ParseResultType {
+        todo!()
     }
 }
 
@@ -185,6 +210,15 @@ where
         parameters.extend(self.command.get_parameters());
 
         parameters
+    }
+}
+
+impl<EC> Parse for Command<EC>
+where
+    EC: EphemerisCommand,
+{
+    fn parse(&self) -> ParseResultType {
+        todo!()
     }
 }
 
@@ -218,18 +252,27 @@ mod test {
     #[test]
     fn get_parameters() {
         let cb = CommandBuilder::from_id(399);
-        let c = cb.with_range(
-            Utc.with_ymd_and_hms(2016, 10, 15, 12, 0, 0).unwrap(),
-            Utc.with_ymd_and_hms(2016, 10, 15, 13, 0, 0).unwrap()).with_type(CommandType::Vector).unwrap();
+        let c = cb
+            .with_range(
+                Utc.with_ymd_and_hms(2016, 10, 15, 12, 0, 0).unwrap(),
+                Utc.with_ymd_and_hms(2016, 10, 15, 13, 0, 0).unwrap(),
+            )
+            .with_type(CommandType::Vector)
+            .unwrap();
         println!("{:?}", c.get_parameters());
     }
 
     #[tokio::test]
     async fn query_command() {
         let cb = CommandBuilder::from_id(399);
-        let c: Command<VectorCommand> = cb.with_range(
-            Utc.with_ymd_and_hms(2016, 10, 15, 12, 0, 0).unwrap(),
-            Utc.with_ymd_and_hms(2016, 10, 15, 13, 0, 0).unwrap()).with_type(CommandType::Vector).unwrap();
-        let res = c.query();
+        let c = cb
+            .with_range(
+                Utc.with_ymd_and_hms(2016, 10, 15, 12, 0, 0).unwrap(),
+                Utc.with_ymd_and_hms(2016, 10, 15, 13, 0, 0).unwrap(),
+            )
+            .with_type(CommandType::Vector)
+            .unwrap();
+        let res = c.query().await;
+        println!("{:?}", res.unwrap());
     }
 }
