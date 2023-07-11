@@ -6,7 +6,8 @@ use thiserror::Error;
 
 use crate::{
     client::{self, HorizonsQueryError},
-    ephemeris, major_bodies,
+    ephemeris::{self, EphemerisOrbitalElementsParser, EphemerisVectorParser},
+    major_bodies, EphemerisVectorItem,
 };
 
 pub enum CommandType {
@@ -142,8 +143,9 @@ pub enum ParseResultType {
     Elements(Vec<ephemeris::EphemerisOrbitalElementsItem>),
 }
 
+#[async_trait]
 pub trait Parse {
-    fn parse(&self) -> ParseResultType;
+    async fn parse(&self) -> ParseResultType;
 }
 
 pub trait EphemerisCommand {
@@ -183,8 +185,9 @@ impl QueryCommand for MajorBodyCommand {
     }
 }
 
+#[async_trait]
 impl Parse for MajorBodyCommand {
-    fn parse(&self) -> ParseResultType {
+    async fn parse(&self) -> ParseResultType {
         todo!()
     }
 }
@@ -192,6 +195,7 @@ impl Parse for MajorBodyCommand {
 impl<EC> QueryCommand for Command<EC>
 where
     EC: EphemerisCommand,
+    Self: Parse,
 {
     fn get_parameters(&self) -> Vec<(&str, String)> {
         let mut parameters = vec![
@@ -213,12 +217,26 @@ where
     }
 }
 
-impl<EC> Parse for Command<EC>
-where
-    EC: EphemerisCommand,
-{
-    fn parse(&self) -> ParseResultType {
-        todo!()
+#[async_trait]
+impl Parse for Command<VectorCommand> {
+    async fn parse(&self) -> ParseResultType {
+        let result = self.query_with_retries(10).await.unwrap();
+
+        let items = EphemerisVectorParser::parse(result.iter().map(String::as_str)).collect();
+
+        ParseResultType::Vector(items)
+    }
+}
+
+#[async_trait]
+impl Parse for Command<OrbitalElementCommand> {
+    async fn parse(&self) -> ParseResultType {
+        let result = self.query_with_retries(10).await.unwrap();
+
+        let items =
+            EphemerisOrbitalElementsParser::parse(result.iter().map(String::as_str)).collect();
+
+        ParseResultType::Elements(items)
     }
 }
 
