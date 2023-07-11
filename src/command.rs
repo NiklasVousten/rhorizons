@@ -7,7 +7,7 @@ use thiserror::Error;
 use crate::{
     client::{self, HorizonsQueryError},
     ephemeris::{self, EphemerisOrbitalElementsParser, EphemerisVectorParser},
-    major_bodies, EphemerisVectorItem,
+    major_bodies, EphemerisVectorItem, MajorBody,
 };
 
 pub enum CommandType {
@@ -188,7 +188,14 @@ impl QueryCommand for MajorBodyCommand {
 #[async_trait]
 impl Parse for MajorBodyCommand {
     async fn parse(&self) -> ParseResultType {
-        todo!()
+        let result = self.query_with_retries(10).await.unwrap();
+
+        let items = result
+            .iter()
+            .filter_map(|s| MajorBody::try_from(s.as_str()).ok())
+            .collect();
+
+        ParseResultType::MajorBodies(items)
     }
 }
 
@@ -200,7 +207,10 @@ where
     fn get_parameters(&self) -> Vec<(&str, String)> {
         let mut parameters = vec![
             ("COMMAND", self.id.to_string()),
+            // TODO: Remove static EPHEM_TYPE
             ("EPHEM_TYPE", "VECTORS".to_string()),
+            //TODO: Make center dynamic
+            ("CENTER", "500@10".to_string()),
         ];
 
         if let Some(start) = self.start {
