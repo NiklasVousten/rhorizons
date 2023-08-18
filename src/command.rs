@@ -27,8 +27,13 @@ impl Display for CommandTypeError {
 }
 
 pub struct CommandBuilder {
-    id: u32,
+    // Target
+    id: i32,
 
+    // Coordinate body center
+    center: i32,
+
+    //Time
     start: Option<DateTime<Utc>>,
     end: Option<DateTime<Utc>>,
     time_step: Option<Duration>,
@@ -45,22 +50,24 @@ impl CommandBuilder {
         }
     }
 
-    pub fn from_id(id: u32) -> CommandBuilder {
+    pub fn from_id(id: i32) -> CommandBuilder {
         CommandBuilder {
             id,
+            center: 10, //Default center is the sun
             start: None,
             end: None,
             time_step: None,
         }
     }
 
-    pub fn with_type(
-        self,
+    pub fn build_with_type(
+        &self,
         command_type: CommandType,
     ) -> Result<Box<dyn QueryCommand + Sync>, CommandTypeError> {
         match command_type {
             CommandType::Vector => Ok(Box::new(Command::<VectorCommand> {
                 id: self.id,
+                center: self.center,
                 start: self.start,
                 end: self.end,
                 _time_step: self.time_step,
@@ -70,9 +77,20 @@ impl CommandBuilder {
         }
     }
 
+    pub fn with_id(&self, id: i32) -> Self {
+        CommandBuilder {
+            id,
+            center: self.center,
+            start: self.start,
+            end: self.end,
+            time_step: self.time_step,
+        }
+    }
+
     pub fn with_start(&self, start: DateTime<Utc>) -> Self {
         CommandBuilder {
             id: self.id,
+            center: self.center,
             start: Some(start),
             end: self.end,
             time_step: self.time_step,
@@ -82,6 +100,7 @@ impl CommandBuilder {
     pub fn with_end(&self, end: DateTime<Utc>) -> Self {
         CommandBuilder {
             id: self.id,
+            center: self.center,
             start: self.start,
             end: Some(end),
             time_step: self.time_step,
@@ -91,6 +110,7 @@ impl CommandBuilder {
     pub fn with_range(&self, start: DateTime<Utc>, end: DateTime<Utc>) -> Self {
         CommandBuilder {
             id: self.id,
+            center: self.center,
             start: Some(start),
             end: Some(end),
             time_step: self.time_step,
@@ -100,9 +120,20 @@ impl CommandBuilder {
     fn _with_time_step(&self, time_step: Duration) -> Self {
         CommandBuilder {
             id: self.id,
+            center: self.center,
             start: self.start,
             end: self.end,
             time_step: Some(time_step),
+        }
+    }
+
+    pub fn with_center(&self, center: i32) -> Self {
+        CommandBuilder {
+            id: self.id,
+            center,
+            start: self.start,
+            end: self.end,
+            time_step: self.time_step,
         }
     }
 }
@@ -160,7 +191,9 @@ pub struct Command<EC>
 where
     EC: EphemerisCommand,
 {
-    id: u32,
+    id: i32,
+
+    center: i32,
 
     start: Option<DateTime<Utc>>,
     end: Option<DateTime<Utc>>,
@@ -207,10 +240,8 @@ where
     fn get_parameters(&self) -> Vec<(&str, String)> {
         let mut parameters = vec![
             ("COMMAND", self.id.to_string()),
-            // TODO: Remove static EPHEM_TYPE
-            ("EPHEM_TYPE", "VECTORS".to_string()),
             //TODO: Make center dynamic
-            ("CENTER", "500@10".to_string()),
+            ("CENTER", format!("500@{}", self.center)),
         ];
 
         if let Some(start) = self.start {
@@ -252,8 +283,10 @@ impl Parse for Command<OrbitalElementCommand> {
 
 impl EphemerisCommand for VectorCommand {
     fn get_parameters(&self) -> Vec<(&str, String)> {
-        //todo!()
-        vec![]
+        vec![
+            ("EPHEM_TYPE", "VECTORS".to_string()),
+            //()
+        ]
     }
 }
 
@@ -273,7 +306,7 @@ mod test {
     fn major_bodies_with_id() {
         let cb = CommandBuilder::from_id(32);
         assert_eq!(cb.id, 32);
-        let c = cb.with_type(CommandType::MajorBody);
+        let c = cb.build_with_type(CommandType::MajorBody);
         assert!(c.is_err());
     }
 
@@ -285,7 +318,7 @@ mod test {
                 Utc.with_ymd_and_hms(2016, 10, 15, 12, 0, 0).unwrap(),
                 Utc.with_ymd_and_hms(2016, 10, 15, 13, 0, 0).unwrap(),
             )
-            .with_type(CommandType::Vector)
+            .build_with_type(CommandType::Vector)
             .unwrap();
         println!("{:?}", c.get_parameters());
     }
@@ -298,9 +331,104 @@ mod test {
                 Utc.with_ymd_and_hms(2016, 10, 15, 12, 0, 0).unwrap(),
                 Utc.with_ymd_and_hms(2016, 10, 15, 13, 0, 0).unwrap(),
             )
-            .with_type(CommandType::Vector)
+            .build_with_type(CommandType::Vector)
             .unwrap();
-        let res = c.query().await;
-        println!("{:?}", res.unwrap());
+        let res: Result<Vec<String>, HorizonsQueryError> = c.query().await;
+
+        assert!(res.is_ok());
+    }
+
+    #[tokio::test]
+    async fn parse_center_command() {
+        let cb = CommandBuilder::from_id(301).with_range(
+            Utc.with_ymd_and_hms(2016, 10, 15, 12, 0, 0).unwrap(),
+            Utc.with_ymd_and_hms(2016, 10, 15, 13, 0, 0).unwrap(),
+        );
+        
+        let c_default_center = cb
+            .build_with_type(CommandType::Vector)
+            .unwrap();
+
+        let c_sun_center = cb.with_center(10)
+        .build_with_type(CommandType::Vector).unwrap();
+
+        let res_default_center = c_default_center.parse().await;
+        let res_sun_center = c_sun_center.parse().await;
+
+        if let ParseResultType::Vector(default_center) = res_default_center {
+            if let ParseResultType::Vector(center) = res_sun_center {
+                assert_eq!(default_center[0].position, center[0].position);
+                assert_eq!(default_center[0].velocity, center[0].velocity);
+            }
+        }
+
+    }
+
+    #[tokio::test]
+    async fn parse_center_relative_command() {
+        let cb = CommandBuilder::from_id(301).with_range(
+            Utc.with_ymd_and_hms(2016, 10, 15, 12, 0, 0).unwrap(),
+            Utc.with_ymd_and_hms(2016, 10, 15, 13, 0, 0).unwrap(),
+        );
+
+        let c_relative_moon = cb
+            .with_center(399)
+            .build_with_type(CommandType::Vector)
+            .unwrap();
+
+        let cb = cb.with_center(10);
+
+        let c_static_moon = cb
+            .with_id(301)
+            .build_with_type(CommandType::Vector)
+            .unwrap();
+
+        let c_static_earth = cb
+            .with_id(399)
+            .build_with_type(CommandType::Vector)
+            .unwrap();
+
+        let res_relative = c_relative_moon.parse().await;
+
+        let res_static_moon = c_static_moon.parse().await;
+        let res_static_earth = c_static_earth.parse().await;
+
+        let (pos, vel) = if let ParseResultType::Vector(static_moon) = res_static_moon {
+            if let ParseResultType::Vector(static_earth) = res_static_earth {
+                (
+                    static_moon[0]
+                        .position
+                        .iter()
+                        .enumerate()
+                        .map(|(i, f)| f - static_earth[0].position[i])
+                        .collect(),
+                    static_moon[0]
+                        .velocity
+                        .iter()
+                        .enumerate()
+                        .map(|(i, f)| f - static_earth[0].velocity[i])
+                        .collect(),
+                )
+            } else {
+                assert!(false, "Static earth delivers wrong ParseResult Type");
+                (vec![], vec![])
+            }
+        } else {
+            assert!(false, "Static moon delivers wrong ParseResult Type");
+            (vec![], vec![])
+        };
+
+        let error_delta = 1.5;
+
+        if let ParseResultType::Vector(relative) = res_relative {
+            for (i, &p) in relative[0].position.iter().enumerate() {
+                assert!((p - pos[i]).abs() < error_delta, "{}", format!("Position difference to large at position {i} ({})", (p - pos[i])));
+            }
+            for (i, &v) in relative[0].velocity.iter().enumerate() {
+                assert!((v - vel[i]).abs() < error_delta, "{}", format!("Position difference to large at position {i} ({})", (v - vel[i])));
+            }
+        } else {
+            assert!(false, "Relative moon delivers wrong ParseResult Type");
+        }
     }
 }

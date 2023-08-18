@@ -36,7 +36,7 @@ async fn getting_earths_ephemeris() {
             Utc.with_ymd_and_hms(2016, 10, 15, 12, 0, 0).unwrap(),
             Utc.with_ymd_and_hms(2016, 10, 15, 13, 0, 0).unwrap(),
         )
-        .with_type(CommandType::Vector)
+        .build_with_type(CommandType::Vector)
         .unwrap();
 
     let result = command.parse().await;
@@ -63,7 +63,7 @@ async fn getting_jupiter_ephemeris() {
             Utc.with_ymd_and_hms(2016, 10, 15, 12, 0, 0).unwrap(),
             Utc.with_ymd_and_hms(2016, 10, 15, 13, 0, 0).unwrap(),
         )
-        .with_type(CommandType::Vector)
+        .build_with_type(CommandType::Vector)
         .unwrap();
 
     let result = command.parse().await;
