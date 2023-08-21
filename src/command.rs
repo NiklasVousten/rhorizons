@@ -73,6 +73,14 @@ impl CommandBuilder {
                 _time_step: self.time_step,
                 command: VectorCommand::default(),
             })),
+            CommandType::OrbitalElement => Ok(Box::new(Command::<OrbitalElementCommand> {
+                id: self.id,
+                center: self.center,
+                start: self.start,
+                end: self.end,
+                _time_step: self.time_step,
+                command: OrbitalElementCommand::default(),
+            })),
             _ => Err(CommandTypeError),
         }
     }
