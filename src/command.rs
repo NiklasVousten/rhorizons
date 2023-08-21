@@ -292,7 +292,9 @@ impl EphemerisCommand for VectorCommand {
 
 impl EphemerisCommand for OrbitalElementCommand {
     fn get_parameters(&self) -> Vec<(&str, String)> {
-        todo!()
+        vec![
+            ("EPHEM_TYPE", "ELEMENTS".to_string()),
+        ]
     }
 }
 
