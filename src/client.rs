@@ -20,10 +20,10 @@ struct HorizonsResponse {
 
 #[derive(Error, Debug)]
 #[error("error returned from Horizons")]
-struct HorizonsQueryError;
+pub struct HorizonsQueryError;
 
 /// Query the Horizons API, returning a result in form of lines.
-async fn query<T>(parameters: &T) -> Result<Vec<String>, HorizonsQueryError>
+pub async fn query<T>(parameters: &T) -> Result<Vec<String>, HorizonsQueryError>
 where
     T: Serialize,
 {
