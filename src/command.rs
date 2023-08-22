@@ -40,7 +40,7 @@ pub struct CommandBuilder {
 }
 
 impl CommandBuilder {
-    pub fn from_type(command_type: CommandType) -> Box<dyn QueryCommand + Sync> {
+    pub fn from_type(command_type: CommandType) -> Box<dyn QueryCommand + Sync + Send> {
         match command_type {
             CommandType::MajorBody => Box::new(MajorBodyCommand {}),
             CommandType::Vector => Box::<Command<VectorCommand>>::default(),
@@ -63,7 +63,7 @@ impl CommandBuilder {
     pub fn build_with_type(
         &self,
         command_type: CommandType,
-    ) -> Result<Box<dyn QueryCommand + Sync>, CommandTypeError> {
+    ) -> Result<Box<dyn QueryCommand + Sync + Send>, CommandTypeError> {
         match command_type {
             CommandType::Vector => Ok(Box::new(Command::<VectorCommand> {
                 id: self.id,
@@ -159,7 +159,7 @@ trait Query {
 }
 
 #[async_trait]
-impl<T: QueryCommand + Sync + ?Sized> Query for T {
+impl<T: QueryCommand + Sync + Send + ?Sized> Query for T {
     async fn query(&self) -> Result<Vec<String>, HorizonsQueryError> {
         client::query(&self.get_parameters()).await
     }
