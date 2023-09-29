@@ -264,7 +264,7 @@ where
         }
 
         if let Some(time_step) = self.time_step {
-            parameters.push(("STEP_SIZE", format!("{} m", time_step.num_minutes())));
+            parameters.push(("STEP_SIZE", format!("{}m", time_step.num_minutes())));
         }
 
         parameters.extend(self.command.get_parameters());
@@ -334,7 +334,7 @@ mod test {
                 Utc.with_ymd_and_hms(2016, 10, 15, 13, 0, 0).unwrap(),
             )
             .with_center(399)
-            .with_time_step(Duration::hours(1))
+            .with_time_step(Duration::minutes(30))
             .build_with_type(CommandType::Vector)
             .unwrap();
         println!("{:?}", c.get_parameters());
@@ -348,6 +348,7 @@ mod test {
                 Utc.with_ymd_and_hms(2016, 10, 15, 12, 0, 0).unwrap(),
                 Utc.with_ymd_and_hms(2016, 10, 15, 13, 0, 0).unwrap(),
             )
+            .with_time_step(Duration::minutes(30))
             .build_with_type(CommandType::Vector)
             .unwrap();
         let res: Result<Vec<String>, HorizonsQueryError> = c.query_with_retries(5).await;
@@ -366,6 +367,7 @@ mod test {
 
         let c_sun_center = cb
             .with_center(10)
+            .with_time_step(Duration::minutes(30))
             .build_with_type(CommandType::Vector)
             .unwrap();
 
