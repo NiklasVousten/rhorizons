@@ -172,7 +172,8 @@ impl<T: QueryCommand + Sync + Send + ?Sized> Query for T {
             if let Ok(result) = self.query().await {
                 return Ok(result);
             }
-            tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+            // Increase time for long requests
+            tokio::time::sleep(std::time::Duration::from_secs(5)).await;
         }
         Err(HorizonsQueryError)
     }
@@ -249,8 +250,8 @@ where
 {
     fn get_parameters(&self) -> Vec<(&str, String)> {
         let mut parameters = vec![
+            ("format", "json".to_string()), 
             ("COMMAND", self.id.to_string()),
-            //TODO: Make center dynamic
             ("CENTER", format!("500@{}", self.center)),
         ];
 
@@ -349,7 +350,7 @@ mod test {
             )
             .build_with_type(CommandType::Vector)
             .unwrap();
-        let res: Result<Vec<String>, HorizonsQueryError> = c.query().await;
+        let res: Result<Vec<String>, HorizonsQueryError> = c.query_with_retries(5).await;
 
         assert!(res.is_ok());
     }
