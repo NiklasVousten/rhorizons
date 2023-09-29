@@ -70,7 +70,7 @@ impl CommandBuilder {
                 center: self.center,
                 start: self.start,
                 end: self.end,
-                _time_step: self.time_step,
+                time_step: self.time_step,
                 command: VectorCommand::default(),
             })),
             CommandType::OrbitalElement => Ok(Box::new(Command::<OrbitalElementCommand> {
@@ -78,7 +78,7 @@ impl CommandBuilder {
                 center: self.center,
                 start: self.start,
                 end: self.end,
-                _time_step: self.time_step,
+                time_step: self.time_step,
                 command: OrbitalElementCommand::default(),
             })),
             _ => Err(CommandTypeError),
@@ -125,13 +125,15 @@ impl CommandBuilder {
         }
     }
 
-    fn _with_time_step(&self, time_step: Duration) -> Self {
+    pub fn with_time_step(&self, time_step: Duration) -> Self {
+        let time_step_minutes = Duration::minutes(time_step.num_minutes());
+
         CommandBuilder {
             id: self.id,
             center: self.center,
             start: self.start,
             end: self.end,
-            time_step: Some(time_step),
+            time_step: Some(time_step_minutes),
         }
     }
 
@@ -205,7 +207,7 @@ where
 
     start: Option<DateTime<Utc>>,
     end: Option<DateTime<Utc>>,
-    _time_step: Option<Duration>,
+    time_step: Option<Duration>,
 
     command: EC,
 }
@@ -260,6 +262,10 @@ where
             parameters.push(("STOP_TIME", end.format("%Y-%b-%d-%T").to_string()))
         }
 
+        if let Some(time_step) = self.time_step {
+            parameters.push(("STEP_SIZE", format!("{} m", time_step.num_minutes())));
+        }
+
         parameters.extend(self.command.get_parameters());
 
         parameters
@@ -300,9 +306,7 @@ impl EphemerisCommand for VectorCommand {
 
 impl EphemerisCommand for OrbitalElementCommand {
     fn get_parameters(&self) -> Vec<(&str, String)> {
-        vec![
-            ("EPHEM_TYPE", "ELEMENTS".to_string()),
-        ]
+        vec![("EPHEM_TYPE", "ELEMENTS".to_string())]
     }
 }
 
@@ -328,6 +332,8 @@ mod test {
                 Utc.with_ymd_and_hms(2016, 10, 15, 12, 0, 0).unwrap(),
                 Utc.with_ymd_and_hms(2016, 10, 15, 13, 0, 0).unwrap(),
             )
+            .with_center(399)
+            .with_time_step(Duration::hours(1))
             .build_with_type(CommandType::Vector)
             .unwrap();
         println!("{:?}", c.get_parameters());
@@ -354,13 +360,13 @@ mod test {
             Utc.with_ymd_and_hms(2016, 10, 15, 12, 0, 0).unwrap(),
             Utc.with_ymd_and_hms(2016, 10, 15, 13, 0, 0).unwrap(),
         );
-        
-        let c_default_center = cb
+
+        let c_default_center = cb.build_with_type(CommandType::Vector).unwrap();
+
+        let c_sun_center = cb
+            .with_center(10)
             .build_with_type(CommandType::Vector)
             .unwrap();
-
-        let c_sun_center = cb.with_center(10)
-        .build_with_type(CommandType::Vector).unwrap();
 
         let res_default_center = c_default_center.parse().await;
         let res_sun_center = c_sun_center.parse().await;
@@ -371,7 +377,6 @@ mod test {
                 assert_eq!(default_center[0].velocity, center[0].velocity);
             }
         }
-
     }
 
     #[tokio::test]
@@ -432,10 +437,24 @@ mod test {
 
         if let ParseResultType::Vector(relative) = res_relative {
             for (i, &p) in relative[0].position.iter().enumerate() {
-                assert!((p - pos[i]).abs() < error_delta, "{}", format!("Position difference to large at position {i} ({})", (p - pos[i])));
+                assert!(
+                    (p - pos[i]).abs() < error_delta,
+                    "{}",
+                    format!(
+                        "Position difference to large at position {i} ({})",
+                        (p - pos[i])
+                    )
+                );
             }
             for (i, &v) in relative[0].velocity.iter().enumerate() {
-                assert!((v - vel[i]).abs() < error_delta, "{}", format!("Position difference to large at position {i} ({})", (v - vel[i])));
+                assert!(
+                    (v - vel[i]).abs() < error_delta,
+                    "{}",
+                    format!(
+                        "Position difference to large at position {i} ({})",
+                        (v - vel[i])
+                    )
+                );
             }
         } else {
             assert!(false, "Relative moon delivers wrong ParseResult Type");
