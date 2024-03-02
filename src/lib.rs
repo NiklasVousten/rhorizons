@@ -6,6 +6,8 @@ mod ephemeris;
 mod major_bodies;
 mod utilities;
 
-pub use client::{ephemeris_orbital_elements, ephemeris_vector, major_bodies};
+pub use client::{ephemeris_orbital_elements, ephemeris_vector, major_bodies, query, HorizonsQueryError};
 pub use ephemeris::{EphemerisOrbitalElementsItem, EphemerisVectorItem};
 pub use major_bodies::MajorBody;
+
+pub use ephemeris::{parse, EphemerisOrbitalElementsParser};

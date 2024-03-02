@@ -472,6 +472,194 @@ fn parse_date_time(line: &str) -> DateTime<Utc> {
         .and_utc()
 }
 
+use chumsky::{error::SimpleReason, prelude::*, recovery::SkipThenRetryUntil};
+
+pub fn parse(input: &str) -> Vec<EphemerisOrbitalElementsItem> {
+    let parser = filter(|c: &char| *c != '$').repeated()
+        .ignore_then(
+            EphemerisOrbitalElementsItem::parser()
+            .then_ignore(text::newline())
+            .repeated()
+            .delimited_by(just("$$SOE").padded(), just("$$EOE"))
+        ).then_ignore(any().repeated())
+        .then_ignore(end());
+
+    parser
+        .parse(input)
+        .map_err(|errors| {
+            report_err(input, "<input>", errors.clone());
+            errors
+        })
+        .unwrap()
+}
+
+impl EphemerisOrbitalElementsItem {
+    pub fn parser() -> impl Parser<char, EphemerisOrbitalElementsItem, Error = Simple<char>> {
+        float_parser::<f64>()
+            .then_ignore(just("=").padded())
+            .then(date_time_parser().padded())
+
+            .then(parameter_parser("EC").padded())
+            .then(parameter_parser("QR").padded())
+
+            .then(parameter_parser("IN").padded())
+
+            .then(parameter_parser("OM").padded())
+            .then(parameter_parser("W").padded())
+            .then(parameter_parser("Tp").padded())
+            .then(parameter_parser("N").padded())
+            .then(parameter_parser("MA").padded())
+            .then(parameter_parser("TA").padded())
+            .then(parameter_parser("A").padded())
+
+            .then(parameter_parser("AD").padded())
+
+            .then(parameter_parser("PR"))
+            .map(
+                |(
+                    (
+                        (
+                            (
+                                (
+                                    (
+                                        (
+                                            (
+                                                (
+                                                    (
+                                                        (
+                                                            ((_time_stamp, time), eccentricity),
+                                                            periapsis_distance,
+                                                        ),
+                                                        inclination,
+                                                    ),
+                                                    longitude_of_ascending_node,
+                                                ),
+                                                argument_of_perifocus,
+                                            ),
+                                            time_of_periapsis,
+                                        ),
+                                        mean_motion,
+                                    ),
+                                    mean_anomaly,
+                                ),
+                                true_anomaly,
+                            ),
+                            semi_major_axis,
+                        ),
+                        apoapsis_distance,
+                    ),
+                    siderral_orbit_period,
+                )| {
+                    EphemerisOrbitalElementsItem {
+                        time,
+                        eccentricity,
+                        periapsis_distance,
+                        inclination,
+                        longitude_of_ascending_node,
+                        argument_of_perifocus,
+                        time_of_periapsis,
+                        mean_motion,
+                        mean_anomaly,
+                        true_anomaly,
+                        semi_major_axis,
+                        apoapsis_distance,
+                        siderral_orbit_period,
+                    }
+                },
+            )
+    }
+}
+
+fn float_parser<F: std::str::FromStr>() -> impl Parser<char, F, Error = Simple<char>>
+where
+    <F as std::str::FromStr>::Err: std::fmt::Debug,
+{
+    filter(|c: &char| c.is_ascii_digit() || *c == '.' || *c == 'E' || *c == '-' || *c == '+')
+        .repeated()
+        .try_map(|vc, span| {
+            let data = vc.into_iter().collect::<String>();
+
+            if let Ok(f) = data.parse::<F>() {
+                Ok(f)
+            } else {
+                Err(Simple::expected_input_found(span, None, None))
+            }
+        })
+}
+
+fn date_time_parser() -> impl Parser<char, DateTime<Utc>, Error = Simple<char>> {
+    just("A.D. ")
+        .ignore_then(take_until(just(" TDB")))
+        .map(|(chars, _)| {
+            let s: String = chars.into_iter().collect();
+            NaiveDateTime::parse_from_str(&s, "%Y-%b-%d %H:%M:%S.%f")
+                .unwrap()
+                .and_utc()
+        })
+}
+
+fn parameter_parser(name: &'static str) -> impl Parser<char, f32, Error = Simple<char>> {
+    just(name)
+        .ignore_then(just("=").padded())
+        .ignore_then(float_parser::<f32>())
+}
+
+use ariadne::{Label, Report, ReportKind, Source};
+
+pub fn report_err(buf: &str, path_str: &str, err: Vec<Simple<char>>) {
+    for e in err {
+        let mut report = Report::build(ReportKind::Error, path_str, e.span().start);
+        match (e.reason(), e.found()) {
+            (SimpleReason::Unexpected, Some(found)) => {
+                report.set_message("Unexpected token");
+                report.add_label(
+                    Label::new((path_str, e.span()))
+                        .with_message(format!("Unexpected token {found}")),
+                );
+                if e.expected().len() > 0 {
+                    report.set_note(format!(
+                        "Expected {}",
+                        e.expected()
+                            .map(|ex| match ex {
+                                Some(ex) => format!("{ex:?}"),
+                                None => "end of file".to_owned(),
+                            })
+                            .collect::<Vec<_>>()
+                            .join(", ")
+                    ));
+                }
+            }
+
+            (SimpleReason::Unexpected, None) => {
+                report.set_message("Unexpected end of file");
+            }
+
+            (SimpleReason::Unclosed { span, delimiter }, found) => {
+                report.set_message("Unclosed delimiter");
+                report.add_label(
+                    Label::new((path_str, span.clone()))
+                        .with_message(format!("Unclosed delimiter {}", delimiter)),
+                );
+                if let Some(found) = found {
+                    report.add_label(
+                        Label::new((path_str, e.span()))
+                            .with_message(format!("Must be closed before this {found}")),
+                    );
+                }
+            }
+
+            (SimpleReason::Custom(msg), _) => {
+                report.set_message(msg);
+                report.add_label(Label::new((path_str, e.span())).with_message(msg));
+            }
+        };
+        report
+            .finish()
+            .print((path_str, Source::from(buf)))
+            .unwrap()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use chrono::TimeZone;
@@ -554,5 +742,23 @@ mod tests {
 
             assert_eq!(time, expected[i]);
         }
+    }
+
+    #[test]
+    fn test_parsing_chumsky() {
+        let data = "2459750.250000000 = A.D. 2022-Jun-19 18:00:00.0000 TDB 
+ EC= 1.711794334680415E-02 QR= 1.469885520304013E+08 IN= 3.134746902320420E-03
+ OM= 1.633896137466430E+02 W = 3.006492364709574E+02 Tp=  2459584.392523936927
+ N = 1.141316101270797E-05 MA= 1.635515780663357E+02 TA= 1.640958153023696E+02
+ A = 1.495485150384278E+08 AD= 1.521084780464543E+08 PR= 3.154253230977451E+07";
+
+        let _res = EphemerisOrbitalElementsItem::parser().then(end()).parse(data).unwrap();
+    }
+
+    #[test]
+    fn test_parsing_chumsky_full() {
+        let data = include_str!("../src/orbital_elements.txt").to_string();
+
+        let _res = parse(data.as_str());
     }
 }
