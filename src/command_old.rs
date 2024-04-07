@@ -300,9 +300,7 @@ impl EphemerisCommand for VectorCommand {
 
 impl EphemerisCommand for OrbitalElementCommand {
     fn get_parameters(&self) -> Vec<(&str, String)> {
-        vec![
-            ("EPHEM_TYPE", "ELEMENTS".to_string()),
-        ]
+        vec![("EPHEM_TYPE", "ELEMENTS".to_string())]
     }
 }
 
@@ -354,13 +352,13 @@ mod test {
             Utc.with_ymd_and_hms(2016, 10, 15, 12, 0, 0).unwrap(),
             Utc.with_ymd_and_hms(2016, 10, 15, 13, 0, 0).unwrap(),
         );
-        
-        let c_default_center = cb
+
+        let c_default_center = cb.build_with_type(CommandType::Vector).unwrap();
+
+        let c_sun_center = cb
+            .with_center(10)
             .build_with_type(CommandType::Vector)
             .unwrap();
-
-        let c_sun_center = cb.with_center(10)
-        .build_with_type(CommandType::Vector).unwrap();
 
         let res_default_center = c_default_center.parse().await;
         let res_sun_center = c_sun_center.parse().await;
@@ -371,7 +369,6 @@ mod test {
                 assert_eq!(default_center[0].velocity, center[0].velocity);
             }
         }
-
     }
 
     #[tokio::test]
@@ -432,10 +429,24 @@ mod test {
 
         if let ParseResultType::Vector(relative) = res_relative {
             for (i, &p) in relative[0].position.iter().enumerate() {
-                assert!((p - pos[i]).abs() < error_delta, "{}", format!("Position difference to large at position {i} ({})", (p - pos[i])));
+                assert!(
+                    (p - pos[i]).abs() < error_delta,
+                    "{}",
+                    format!(
+                        "Position difference to large at position {i} ({})",
+                        (p - pos[i])
+                    )
+                );
             }
             for (i, &v) in relative[0].velocity.iter().enumerate() {
-                assert!((v - vel[i]).abs() < error_delta, "{}", format!("Position difference to large at position {i} ({})", (v - vel[i])));
+                assert!(
+                    (v - vel[i]).abs() < error_delta,
+                    "{}",
+                    format!(
+                        "Position difference to large at position {i} ({})",
+                        (v - vel[i])
+                    )
+                );
             }
         } else {
             assert!(false, "Relative moon delivers wrong ParseResult Type");

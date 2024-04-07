@@ -3,6 +3,7 @@
 Access NASA JPL Horizons system from Rust. This crate is written in asynchronous
 code, therefore you probably want to use it in conjunction with `tokio`.
 
+The previous version of the command API can be found [here](https://github.com/g1aeder/rhorizons/tree/b7f9ca957c6ff7de09bc616d4441fb52379403b6).
 
 ## Examples
 

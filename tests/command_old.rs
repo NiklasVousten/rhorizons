@@ -1,11 +1,7 @@
 // Tests in this module connect to the real Horizons system. As such, they
 // require Internet access and might start failing if Horizon's API changes.
 use chrono::{TimeZone, Utc};
-use rhorizons::{
-    self,
-    command::{parameters::*, *},
-    command_old::ParseResultType,
-};
+use rhorizons::{self, command_old::*};
 
 fn init() {
     let _ = env_logger::builder().is_test(true).try_init();
@@ -15,7 +11,7 @@ fn init() {
 async fn finding_earth() {
     init();
 
-    let major_bodies = Query::major_bodies();
+    let major_bodies = CommandBuilder::from_type(CommandType::MajorBody);
 
     let result = major_bodies.parse().await;
     if let ParseResultType::MajorBodies(bodies) = result {
@@ -35,13 +31,15 @@ async fn getting_earths_ephemeris() {
     //  X = 1.379561021896053E+08 Y = 5.667156012930278E+07 Z =-2.601196352168918E+03
     //  VX=-1.180102398133564E+01 VY= 2.743089439727051E+01 VZ= 3.309367894566151E-05
     //  LT= 4.974865749957088E+02 RG= 1.491427231399648E+08 RR=-4.926267109444211E-01
-    let mut query = Query::vectors();
-    query.set_command(Some(Command::Id(399)));
+    let command = CommandBuilder::from_id(399)
+        .with_range(
+            Utc.with_ymd_and_hms(2016, 10, 15, 12, 0, 0).unwrap(),
+            Utc.with_ymd_and_hms(2016, 10, 15, 13, 0, 0).unwrap(),
+        )
+        .build_with_type(CommandType::Vector)
+        .unwrap();
 
-    //        Utc.with_ymd_and_hms(2016, 10, 15, 12, 0, 0).unwrap(),
-    //        Utc.with_ymd_and_hms(2016, 10, 15, 13, 0, 0).unwrap(),
-
-    let result = query.parse().await;
+    let result = command.parse().await;
 
     if let ParseResultType::Vector(vectors) = result {
         assert_eq!(1.379561021896053E+08, vectors[0].position[0]);
@@ -60,12 +58,15 @@ async fn getting_jupiter_ephemeris() {
     //  X =-8.125930353044792E+08 Y =-6.890018021386522E+07 Z = 1.846888215010012E+07
     //  VX= 9.479984730623543E-01 VY=-1.241342015681963E+01 VZ= 3.033885124560420E-02
     //  LT= 2.720942202383012E+03 RG= 8.157179509283365E+08 RR= 1.048282114626244E-01
-    let mut query = Query::vectors();
-    query.set_command(Some(Command::Id(599)));
-    //            Utc.with_ymd_and_hms(2016, 10, 15, 12, 0, 0).unwrap(),
-    //          Utc.with_ymd_and_hms(2016, 10, 15, 13, 0, 0).unwrap(),
+    let command = CommandBuilder::from_id(599)
+        .with_range(
+            Utc.with_ymd_and_hms(2016, 10, 15, 12, 0, 0).unwrap(),
+            Utc.with_ymd_and_hms(2016, 10, 15, 13, 0, 0).unwrap(),
+        )
+        .build_with_type(CommandType::Vector)
+        .unwrap();
 
-    let result = query.parse().await;
+    let result = command.parse().await;
 
     if let ParseResultType::Vector(vectors) = result {
         assert_eq!(-8.125930353044792E+08, vectors[0].position[0]);
